@@ -14,6 +14,9 @@ static int            stream_has_enough_packets(AVStream *st, int stream_id, Pac
 static void           stream_seek(VideoState* is, int64_t pos, int64_t rel, int by_bytes);
 static int            video_thread(void *arg);
 static int            create_hwaccel(AVBufferRef** device_ctx);
+static int            get_video_frame(VideoState *is, AVFrame *frame)
+static int            get_master_sync_type(VideoState *is);
+static double         get_master_clock(VideoState *is);
 static int            queue_picture(VideoState* is, AVFrame* src_frame, double pts, double duration, int64_t pos, int serial);
 
 VideoState *stream_open(const char *filename, const AVInputFormat *iformat)
@@ -775,6 +778,75 @@ static int create_hwaccel(AVBufferRef **device_ctx)
     av_log(NULL, AV_LOG_WARNING, "Derive %s from vulkan not supported.\n", hwaccel);
     ret = av_hwdevice_ctx_create(device_ctx, type, NULL, NULL, 0);
     return ret;
+}
+
+static int get_video_frame(VideoState *is, AVFrame *frame)
+{
+    int got_picture;
+
+    if ((got_picture = decoder_decode_frame(&is->viddec, frame, NULL)) < 0)
+        return -1;
+
+    if (got_picture) {
+        double dpts = NAN;
+
+        if (frame->pts != AV_NOPTS_VALUE)
+            dpts = av_q2d(is->video_st->time_base) * frame->pts;
+
+        frame->sample_aspect_ratio = av_guess_sample_aspect_ratio(is->ic, is->video_st, frame);
+
+        if (framedrop > 0 || (framedrop && get_master_sync_type(is) != AV_SYNC_VIDEO_MASTER)) {
+            if (frame->pts != AV_NOPTS_VALUE) {
+                double diff = dpts - get_master_clock(is);
+                if (!isnan(diff) && fabs(diff) < AV_NOSYNC_THRESHOLD &&
+                    diff - is->frame_last_filter_delay < 0 &&
+                    is->viddec.pkt_serial == is->vidclk.serial &&
+                    is->videoq.nb_packets) {
+                    is->frame_drops_early++;
+                    av_frame_unref(frame);
+                    got_picture = 0;
+                }
+            }
+        }
+    }
+
+    return got_picture;
+}
+
+static int get_master_sync_type(VideoState *is)
+{
+    if (is->av_sync_type == AV_SYNC_VIDEO_MASTER) {
+        if (is->video_st)
+            return AV_SYNC_VIDEO_MASTER;
+        else
+            return AV_SYNC_AUDIO_MASTER;
+    } else if (is->av_sync_type == AV_SYNC_AUDIO_MASTER) {
+        if (is->audio_st)
+            return AV_SYNC_AUDIO_MASTER;
+        else
+            return AV_SYNC_EXTERNAL_CLOCK;
+    } else {
+        return AV_SYNC_EXTERNAL_CLOCK;
+    }
+}
+
+/* get the current master clock value */
+static double get_master_clock(VideoState *is)
+{
+    double val;
+
+    switch (get_master_sync_type(is)) {
+        case AV_SYNC_VIDEO_MASTER:
+            val = get_clock(&is->vidclk);
+            break;
+        case AV_SYNC_AUDIO_MASTER:
+            val = get_clock(&is->audclk);
+            break;
+        default:
+            val = get_clock(&is->extclk);
+            break;
+    }
+    return val;
 }
 
 static int queue_picture(VideoState *is, AVFrame *src_frame, double pts, double duration, int64_t pos, int serial)
