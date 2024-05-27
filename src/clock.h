@@ -1,6 +1,12 @@
 #ifndef FFPLAY_CLOCK_H
 #define FFPLAY_CLOCK_H
 
+enum {
+    AV_SYNC_AUDIO_MASTER,   /* default choice */
+    AV_SYNC_VIDEO_MASTER,
+    AV_SYNC_EXTERNAL_CLOCK, /* synchronize to an external clock */
+};
+
 typedef struct Clock {
     double pts;           /* clock base */
     double pts_drift;     /* clock base minus time at which we updated the clock */
