@@ -1,6 +1,11 @@
 #ifndef FFPLAY_CLOCK_H
 #define FFPLAY_CLOCK_H
 
+/* external clock speed adjustment constants for realtime sources based on buffer fullness */
+#define EXTERNAL_CLOCK_SPEED_MIN  0.900
+#define EXTERNAL_CLOCK_SPEED_MAX  1.010
+#define EXTERNAL_CLOCK_SPEED_STEP 0.001
+
 enum {
     AV_SYNC_AUDIO_MASTER,   /* default choice */
     AV_SYNC_VIDEO_MASTER,
