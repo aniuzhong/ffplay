@@ -139,5 +139,6 @@ typedef struct VideoState {
 VideoState    *stream_open(const char *filename, const AVInputFormat *iformat);
 void           stream_close(VideoState *is);
 void           toggle_pause(VideoState *is);
+void           video_refresh(void* opaque, double* remaining_time, SDL_Renderer *renderer);
 
 #endif // FFPLAY_VIDEO_STATE
